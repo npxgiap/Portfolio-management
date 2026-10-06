@@ -63,19 +63,31 @@ def main():
     print(f"   - Correlation Coefficient (r):     {data['corr_fpt_vnm']:.4f}")
     print(f"   - Diversification Benefit:         Đạt hiệu ứng giảm rủi ro vượt trội (MVP Vol = {data['vol_mvp']*100:.2f}%)")
 
-    print(f"\n4. CAPM & SYSTEMATIC RISK (BETA) ANALYSIS:")
+    print(f"\n4. CAPM & STATSMODELS OLS ECONOMETRIC ANALYSIS:")
     for ticker in data['stock_tickers']:
         st = data['capm_stats'][ticker]
         print(f"   - {ticker}:")
-        print(f"       + Hệ số Beta (β):     {st['beta']:.2f} (Đo lường rủi ro hệ thống so với VN30)")
-        print(f"       + Jensen's Alpha (α):  {st['alpha_annual']*100:+.2f}%/năm")
-        print(f"       + Hệ số R²:           {st['r_squared']:.2f}")
-    print(f"   - Danh mục Tangency (FPT = {data['w_fpt_tan']*100:.0f}%, VNM = {data['w_vnm_tan']*100:.0f}%):")
+        print(f"       + Hệ số Beta (β):     {st['beta']:.4f} (t-stat: {st['beta_tstat']:.2f}, p-value: {st['beta_pvalue']:.2e})")
+        print(f"       + 95% CI Beta:        [{st['beta_ci_95'][0]:.3f}, {st['beta_ci_95'][1]:.3f}]")
+        print(f"       + Jensen's Alpha (α):  {st['alpha_annual']*100:+.2f}%/năm (p-value: {st['alpha_pvalue']:.4f})")
+        print(f"       + Hệ số R² / Adj R²:  {st['r_squared']:.4f} / {st['adj_r_squared']:.4f}")
+        print(f"       + F-statistic:        {st['f_stat']:.2f} (p-value: {st['f_pvalue']:.2e})")
+    print(f"   - Danh mục Tangency [Scipy SLSQP] (FPT = {data['w_fpt_tan']*100:.1f}%, VNM = {data['w_vnm_tan']*100:.1f}%):")
     print(f"       + Hệ số Beta (β_p):    {data['beta_tan']:.2f}")
     print(f"       + Jensen's Alpha (α_p): {data['alpha_tan']*100:+.2f}%/năm")
-    print(f"   - Danh mục MVP (FPT = {data['w_fpt_mvp']*100:.0f}%, VNM = {data['w_vnm_mvp']*100:.0f}%):")
+    print(f"   - Danh mục MVP [Scipy SLSQP] (FPT = {data['w_fpt_mvp']*100:.1f}%, VNM = {data['w_vnm_mvp']*100:.1f}%):")
     print(f"       + Hệ số Beta (β_p):    {data['beta_mvp']:.2f}")
     print(f"       + Jensen's Alpha (α_p): {data['alpha_mvp']*100:+.2f}%/năm")
+
+    print(f"\n5. SCIPY STATS & RISK MODELING (Jarque-Bera & Modified VaR):")
+    for ticker in data['stock_tickers']:
+        m = data['dist_metrics'][ticker]
+        jb_txt = "Non-Normal (p<0.01)" if m['jb_pvalue'] < 0.01 else "Normal"
+        print(f"   - {ticker}:")
+        print(f"       + Skewness:           {m['skew']:.4f} | Excess Kurtosis: {m['kurt']:.4f}")
+        print(f"       + Jarque-Bera Test:   JB = {m['jb_stat']:.2f}, p-value = {m['jb_pvalue']:.2e} -> {jb_txt}")
+        print(f"       + Historical VaR 95%: {m['var_95']:.2f}% | Cornish-Fisher VaR: {m['var_cf_95']:.2f}%")
+        print(f"       + CVaR 95% (1-Day):   {m['cvar_95']:.2f}%")
     print("="*70)
 
     # 3. Khởi động Web Dashboard (Nhúng trực tiếp vector SVG, không tách thành từng ảnh tĩnh)

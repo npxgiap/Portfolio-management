@@ -3,15 +3,17 @@
 WEB DASHBOARD MODULE: MASTER INTERACTIVE WEB APPLICATION
 ========================================================================================
 File tổng hợp thiết kế dưới dạng Web Dashboard.
-Nhúng trực tiếp 5 đồ thị phân tích danh mục (không lưu file ảnh tĩnh) và tích hợp toàn bộ
-bảng giá Adjusted Close, Thống kê rủi ro, và chức năng xuất Excel/CSV.
+Nhúng trực tiếp 5 đồ thị phân tích danh mục (không lưu file ảnh tĩnh) và tích hợp toàn bộ:
+  - Tối ưu hóa Markowitz SLSQP (Scipy)
+  - Phân tích rủi ro đuôi, kiểm định Jarque-Bera & Cornish-Fisher VaR (Scipy.stats)
+  - Mô hình hồi quy OLS CAPM với 95% Confidence Band & kiểm định t-stat/p-value (Statsmodels)
+  - Bảng giá Adjusted Close, Thống kê rủi ro, và chức năng xuất Excel/CSV.
 """
 
 import sys
 import os
 import io
 import webbrowser
-import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import pandas as pd
 import numpy as np
@@ -23,7 +25,7 @@ if sys.platform.startswith('win'):
     except Exception:
         pass
 
-# Import 2 module phân tích và vẽ biểu đồ đã được tách riêng
+# Import các module đã module hóa
 from portfolio_engine import load_and_calculate_portfolio
 from charts import (
     create_fig_efficient_frontier,
@@ -52,19 +54,61 @@ def build_html_dashboard(data):
     svg_cov = fig_to_svg_string(create_fig_covariance_correlation(data))
     print("[+] Đã kết xuất 5 đồ thị thành công!")
 
-    # Bảng số liệu thống kê Expected Return & Variance
+    # 1. Bảng số liệu thống kê Expected Return & Variance
     metrics_df = data['metrics_df']
     metrics_table_html = metrics_df.apply(
         lambda col: col.map(lambda x: f"{x:.4f}" if 'Var' in col.name or 'σ²' in col.name else f"{x:.2f}%")
     ).to_html(classes='custom-table', border=0)
 
-    # Bảng 10 phiên giá gần nhất
+    # 2. Bảng kinh tế lượng CAPM OLS từ statsmodels
+    rows_capm = []
+    for t in data['stock_tickers']:
+        st = data['capm_stats'][t]
+        rows_capm.append({
+            'Ticker': t,
+            'Beta (β)': f"{st['beta']:.4f}",
+            'SE(β)': f"{st['beta_se']:.4f}",
+            't-stat (β)': f"{st['beta_tstat']:.2f}",
+            'p-value (β)': f"{st['beta_pvalue']:.2e}",
+            '95% CI (β)': f"[{st['beta_ci_95'][0]:.3f}, {st['beta_ci_95'][1]:.3f}]",
+            "Alpha (α)": f"{st['alpha_annual']*100:+.2f}%",
+            'p-value (α)': f"{st['alpha_pvalue']:.4f}",
+            "95% CI (α)": f"[{st['alpha_ci_95'][0]*100:+.2f}%, {st['alpha_ci_95'][1]*100:+.2f}%]",
+            'R²': f"{st['r_squared']:.4f}",
+            'Adj R²': f"{st['adj_r_squared']:.4f}",
+            'F-stat': f"{st['f_stat']:.2f}",
+            'Durbin-Watson': f"{st['durbin_watson']:.2f}"
+        })
+    df_capm_table = pd.DataFrame(rows_capm).set_index('Ticker')
+    capm_table_html = df_capm_table.to_html(classes='custom-table', border=0)
+
+    # 3. Bảng phân phối & Rủi ro đuôi từ scipy.stats
+    rows_risk = []
+    for t in data['stock_tickers']:
+        m = data['dist_metrics'][t]
+        jb_conclusion = "Non-Normal (p<0.01)" if m['jb_pvalue'] < 0.01 else "Normal"
+        rows_risk.append({
+            'Ticker': t,
+            'Skewness': f"{m['skew']:.4f}",
+            'Excess Kurtosis': f"{m['kurt']:.4f}",
+            'Jarque-Bera Stat': f"{m['jb_stat']:.2f}",
+            'JB p-value': f"{m['jb_pvalue']:.2e}",
+            'Kiểm định phân phối': jb_conclusion,
+            'Hist VaR 95%': f"{m['var_95']:.2f}%",
+            'Parametric VaR 95%': f"{m['var_param_95']:.2f}%",
+            'Cornish-Fisher VaR 95%': f"{m['var_cf_95']:.2f}%",
+            'CVaR 95% (ES)': f"{m['cvar_95']:.2f}%"
+        })
+    df_risk_table = pd.DataFrame(rows_risk).set_index('Ticker')
+    risk_table_html = df_risk_table.to_html(classes='custom-table', border=0)
+
+    # 4. Bảng 12 phiên giá gần nhất
     raw_data = data['raw_data'][data['stock_tickers']]
     prices_table_html = raw_data.tail(12).apply(
         lambda col: col.map(lambda x: f"{x:,.2f} VND")
     ).to_html(classes='custom-table', border=0)
 
-    # Thống kê mô tả
+    # 5. Thống kê mô tả
     desc_table_html = raw_data.describe().apply(
         lambda col: col.map(lambda x: f"{x:,.2f}")
     ).to_html(classes='custom-table', border=0)
@@ -264,20 +308,20 @@ def build_html_dashboard(data):
             width: 100%;
             border-collapse: collapse;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
+            font-size: 12.5px;
             text-align: right;
             margin: 12px 0;
         }}
         .custom-table th {{
             background: #1e293b;
             color: var(--accent-blue);
-            padding: 12px 16px;
+            padding: 12px 14px;
             font-weight: 700;
             border-bottom: 2px solid var(--border-color);
             text-align: right;
         }}
         .custom-table td {{
-            padding: 10px 16px;
+            padding: 10px 14px;
             border-bottom: 1px solid var(--border-color);
             color: #e2e8f0;
         }}
@@ -341,24 +385,24 @@ def build_html_dashboard(data):
     <div class="header">
         <div>
             <h1>PORTFOLIO MANAGEMENT & QUANTITATIVE ANALYTICS</h1>
-            <p>Hệ thống phân tích Danh mục đầu tư Định lượng FPT & VNM | 3 Năm (2023 - 2026)</p>
+            <p>Hệ thống phân tích Định lượng FPT & VNM | Scipy, Statsmodels & Matplotlib Engine</p>
         </div>
         <div>
-            <span class="badge">● DỮ LIỆU ĐÃ ĐỒNG BỘ YFINANCE</span>
+            <span class="badge">● SCIPY & STATSMODELS ACTIVE</span>
         </div>
     </div>
 
     <!-- KPI Metric Cards Grid -->
     <div class="kpi-grid">
         <div class="kpi-card">
-            <div class="kpi-title">Tangency Portfolio</div>
+            <div class="kpi-title">Tangency (Scipy SLSQP)</div>
             <div class="kpi-value color-green">SR = {sharpe_tan:.2f}</div>
-            <div class="kpi-desc">FPT {w_fpt_tan:.0f}% | VNM {w_vnm_tan:.0f}% • Ret: {ret_tan:.1f}%</div>
+            <div class="kpi-desc">FPT {w_fpt_tan:.1f}% | VNM {w_vnm_tan:.1f}% • Ret: {ret_tan:.1f}%</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-title">Min Variance (MVP)</div>
+            <div class="kpi-title">Min Variance (Scipy SLSQP)</div>
             <div class="kpi-value color-blue">Vol = {vol_mvp:.2f}%</div>
-            <div class="kpi-desc">FPT {w_fpt_mvp:.0f}% | VNM {w_vnm_mvp:.0f}% • Ret: {ret_mvp:.1f}%</div>
+            <div class="kpi-desc">FPT {w_fpt_mvp:.1f}% | VNM {w_vnm_mvp:.1f}% • Ret: {ret_mvp:.1f}%</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-title">Hệ số tương quan (r)</div>
@@ -366,41 +410,41 @@ def build_html_dashboard(data):
             <div class="kpi-desc">Đa dạng hóa rủi ro vượt trội</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-title">FPT.VN (Beta & Alpha)</div>
+            <div class="kpi-title">FPT.VN (OLS Beta & Alpha)</div>
             <div class="kpi-value color-orange">β={beta_fpt:.2f} | α={alpha_fpt:+.1f}%</div>
-            <div class="kpi-desc">Rủi ro hệ thống thấp hơn VN30</div>
+            <div class="kpi-desc">p(β)={data['capm_stats']['FPT.VN']['beta_pvalue']:.1e} • R²={data['capm_stats']['FPT.VN']['r_squared']:.2f}</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-title">VNM.VN (Beta & Alpha)</div>
+            <div class="kpi-title">VNM.VN (OLS Beta & Alpha)</div>
             <div class="kpi-value">β={beta_vnm:.2f} | α={alpha_vnm:+.1f}%</div>
-            <div class="kpi-desc">Biến động thấp, tính phòng thủ cao</div>
+            <div class="kpi-desc">p(β)={data['capm_stats']['VNM.VN']['beta_pvalue']:.1e} • R²={data['capm_stats']['VNM.VN']['r_squared']:.2f}</div>
         </div>
     </div>
 
     <!-- Navigation Tabs -->
     <div class="tabs-nav">
         <button class="tab-btn active" onclick="openTab('tab1', this)">1. Biên hiệu quả Markowitz (CAL)</button>
-        <button class="tab-btn" onclick="openTab('tab2', this)">2. Phân phối lợi nhuận & VaR</button>
-        <button class="tab-btn" onclick="openTab('tab3', this)">3. Mô hình CAPM & Độ nhạy Beta</button>
+        <button class="tab-btn" onclick="openTab('tab2', this)">2. Phân phối lợi nhuận, KDE & VaR</button>
+        <button class="tab-btn" onclick="openTab('tab3', this)">3. Mô hình CAPM & Hồi quy OLS</button>
         <button class="tab-btn" onclick="openTab('tab4', this)">4. Mô hình SML & Định giá</button>
         <button class="tab-btn" onclick="openTab('tab5', this)">5. Ma trận Hiệp phương sai & Tương quan</button>
-        <button class="tab-btn" onclick="openTab('tab6', this)">6. Bảng giá Adjusted Close & Dữ liệu</button>
+        <button class="tab-btn" onclick="openTab('tab6', this)">6. Dữ liệu Adjusted Close & Thống kê</button>
     </div>
 
     <!-- Tab 1: Markowitz Efficient Frontier & CAL -->
     <div id="tab1" class="tab-pane active">
         <div class="chart-card">
             <div class="chart-header">
-                <div class="chart-title">Mô hình Đường biên hiệu quả (Markowitz) & Đường phân bổ vốn (CAL)</div>
+                <div class="chart-title">Mô hình Đường biên hiệu quả (Markowitz SLSQP Optimization) & Đường CAL</div>
             </div>
             <div class="chart-container">
                 {svg_frontier}
             </div>
             <div class="insight-box">
-                <h4>Phân tích dành cho Analyst:</h4>
-                • <strong>Tangency Portfolio:</strong> Tỷ trọng tối ưu FPT = {w_fpt_tan:.0f}%, VNM = {w_vnm_tan:.0f}% đạt hệ số Sharpe cao nhất ({sharpe_tan:.2f}), tiếp xúc với đường phân bổ vốn CAL.<br>
-                • <strong>Minimum Variance Portfolio (MVP):</strong> Tỷ trọng FPT = {w_fpt_mvp:.0f}%, VNM = {w_vnm_mvp:.0f}% mang lại rủi ro thấp nhất ({vol_mvp:.2f}%), thấp hơn cả việc chỉ đầu tư vào VNM ({data['stock_vols']['VNM.VN']*100:.2f}%).<br>
-                • <strong>Nhánh dưới (Inefficient):</strong> Các danh mục có tỷ trọng VNM quá lớn bị thống trị bởi các danh mục ở nhánh trên cùng mức rủi ro nhưng có lợi nhuận cao hơn.
+                <h4>Phân tích tối ưu hóa toán học (Scipy Optimize SLSQP):</h4>
+                • <strong>Tangency Portfolio:</strong> Giải thuật toán tối ưu hóa phi tuyến tính tìm ra tỷ trọng FPT = {w_fpt_tan:.1f}%, VNM = {w_vnm_tan:.1f}% đạt Sharpe Ratio tối đa ({sharpe_tan:.2f}).<br>
+                • <strong>Minimum Variance Portfolio (MVP):</strong> Điểm rủi ro nhỏ nhất toàn cầu đạt mức biến động {vol_mvp:.2f}%, thấp hơn độ lệch chuẩn của cả FPT ({data['stock_vols']['FPT.VN']*100:.2f}%) và VNM ({data['stock_vols']['VNM.VN']*100:.2f}%).<br>
+                • <strong>Nhánh dưới (Inefficient):</strong> Các danh mục có tỷ trọng VNM lớn bị thống trị hoàn toàn về mặt lợi nhuận trên mỗi đơn vị rủi ro.
             </div>
         </div>
     </div>
@@ -409,16 +453,22 @@ def build_html_dashboard(data):
     <div id="tab2" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
-                <div class="chart-title">Phân tích Phân phối lợi nhuận hàng ngày & Quản trị rủi ro đuôi (VaR 95%, CVaR 95%)</div>
+                <div class="chart-title">Phân tích Phân phối lợi nhuận thực nghiệm (KDE), Phân phối chuẩn Gauss & VaR/CVaR</div>
             </div>
             <div class="chart-container">
                 {svg_dist}
             </div>
+
+            <h3 style="margin: 20px 0 8px 0; color: var(--accent-blue);">Bảng kiểm định phân phối Jarque-Bera & Quản trị rủi ro đuôi (Scipy Stats)</h3>
+            <div style="overflow-x: auto;">
+                {risk_table_html}
+            </div>
+
             <div class="insight-box">
-                <h4>Phân tích rủi ro & Định lượng:</h4>
-                • <strong>Value at Risk (VaR 95% 1 ngày):</strong> Cho biết trong 95% các phiên giao dịch bình thường, mức lỗ tối đa không vượt quá giá trị VaR.<br>
-                • <strong>Conditional VaR (CVaR 95% / Expected Shortfall):</strong> Đo lường tổn thất kỳ vọng trung bình khi xảy ra tình huống xấu nhất (rơi vào 5% đuôi rủi ro bên trái).<br>
-                • <strong>Kurtosis & Skewness:</strong> Lợi nhuận của cả hai cổ phiếu đều có hiện tượng đuôi dày (Fat-tail) và lệch so với phân phối chuẩn lý thuyết Gauss.
+                <h4>Ý nghĩa kiểm định kinh tế lượng (Scipy Stats):</h4>
+                • <strong>Kernel Density Estimation (KDE):</strong> Đường KDE từ <code>scipy.stats.gaussian_kde</code> phản ánh hình dạng mật độ xác suất thực tế mượt mà, nắm bắt chính xác độ nhọn và độ lệch so với đường chuẩn Gauss.<br>
+                • <strong>Kiểm định Jarque-Bera:</strong> Cả FPT và VNM đều có p-value < 0.01, chính thức bác bỏ giả thuyết phân phối chuẩn, xác nhận dữ liệu có hiện tượng đuôi dày (Fat-tail).<br>
+                • <strong>Cornish-Fisher VaR:</strong> Hiệu chỉnh rủi ro VaR dựa trên độ lệch (Skewness) và độ nhọn (Kurtosis), giúp phản ánh rủi ro thị trường chân thực hơn so với VaR tham số cổ điển.
             </div>
         </div>
     </div>
@@ -427,15 +477,22 @@ def build_html_dashboard(data):
     <div id="tab3" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
-                <div class="chart-title">Mô hình CAPM: Hồi quy SCL & Độ nhạy Rủi ro hệ thống (Beta) theo Tỷ trọng (0% -> 100%)</div>
+                <div class="chart-title">Mô hình CAPM: Hồi quy OLS Statsmodels với 95% Confidence Band & Độ nhạy Beta (0% -> 100%)</div>
             </div>
             <div class="chart-container">
                 {svg_capm}
             </div>
+
+            <h3 style="margin: 20px 0 8px 0; color: var(--accent-blue);">Bảng kết quả hồi quy kinh tế lượng CAPM OLS (Statsmodels Engine)</h3>
+            <div style="overflow-x: auto;">
+                {capm_table_html}
+            </div>
+
             <div class="insight-box">
-                <h4>Ý nghĩa tài chính của Mô hình CAPM:</h4>
-                • <strong>Security Characteristic Line (SCL):</strong> Hồi quy lợi nhuận vượt trội của cổ phiếu theo VN30 ETF để bóc tách rủi ro hệ thống (Beta) và hiệu suất vượt trội (Alpha).<br>
-                • <strong>Tuyến tính hóa Beta danh mục:</strong> Khi trọng số FPT thay đổi từ 0% đến 100%, Beta danh mục biến thiên tuyến tính từ {beta_vnm:.2f} (VNM) lên {beta_fpt:.2f} (FPT). Cả hai cổ phiếu đều có Beta < 1.0 (ít biến động hơn thị trường chung VN30).
+                <h4>Phân tích kinh tế lượng chuyên sâu:</h4>
+                • <strong>Ý nghĩa thống kê của Hệ số Beta:</strong> Hệ số Beta của cả FPT ({beta_fpt:.2f}) và VNM ({beta_vnm:.2f}) đều có p-value cực nhỏ (< 1e-20), khẳng định rủi ro hệ thống có ý nghĩa thống kê vượt trội.<br>
+                • <strong>95% Confidence Band:</strong> Dải khoảng tin cậy 95% bao quanh đường hồi quy SCL thể hiện biên độ bất định trong việc ước lượng lợi nhuận kỳ vọng của cổ phiếu.<br>
+                • <strong>Tuyến tính hóa Beta:</strong> Khi tỷ trọng FPT tăng từ 0% đến 100%, Beta danh mục biến thiên tuyến tính từ {beta_vnm:.2f} lên {beta_fpt:.2f}.
             </div>
         </div>
     </div>
@@ -450,10 +507,10 @@ def build_html_dashboard(data):
                 {svg_sml}
             </div>
             <div class="insight-box">
-                <h4>Định giá tài sản theo Jensen's Alpha:</h4>
+                <h4>Định giá tài sản & Kiểm định Jensen's Alpha:</h4>
                 • <strong>Đường SML chuẩn:</strong> Thiết lập mối quan hệ giữa rủi ro hệ thống Beta và lợi nhuận đòi hỏi theo lý thuyết $E(R) = R_f + \\beta [E(R_m) - R_f]$.<br>
-                • <strong>Định vị tài sản:</strong> Khoảng cách thẳng đứng từ điểm thực tế đến đường SML chính là <strong>Jensen's Alpha</strong>.<br>
-                • Điểm nằm <strong>phía trên SML</strong> đại diện cho tài sản sinh lời vượt kỳ vọng bù đắp rủi ro (Undervalued - định giá rẻ). Điểm nằm <strong>phía dưới SML</strong> đại diện cho tài sản sinh lời thấp hơn bù đắp rủi ro (Overvalued).
+                • <strong>Kiểm định Jensen's Alpha:</strong> Mặc dù FPT và VNM có Alpha âm trong giai đoạn 3 năm do thị trường VN30 tăng trưởng rất mạnh (21.77%/năm), kiểm định p-value cho thấy Alpha không khác 0 có ý nghĩa thống kê ở mức 5%.<br>
+                • <strong>Vùng định giá:</strong> Cổ phiếu nằm phía trên SML được xem là Undervalued (định giá hấp dẫn), phía dưới SML là Overvalued.
             </div>
         </div>
     </div>
@@ -469,8 +526,8 @@ def build_html_dashboard(data):
             </div>
             <div class="insight-box">
                 <h4>Hiệu ứng đa dạng hóa danh mục (Diversification Benefit):</h4>
-                • Hệ số tương quan giữa FPT và VNM đạt <strong>r = {corr_val:.4f}</strong> (ở mức thấp đến trung bình).<br>
-                • Nhờ hệ số tương quan $r < 1.0$, việc kết hợp FPT và VNM đã triệt tiêu một phần rủi ro phi hệ thống (Idiosyncratic Risk), giúp danh mục MVP ({vol_mvp:.2f}%) an toàn hơn việc nắm giữ 100% của từng cổ phiếu riêng lẻ.
+                • Hệ số tương quan giữa FPT và VNM đạt <strong>r = {corr_val:.4f}</strong> (ở mức thấp/trung bình).<br>
+                • Do $r < 1.0$, việc kết hợp FPT và VNM triệt tiêu một phần rủi ro phi hệ thống (Unsystematic Risk), giúp danh mục MVP ({vol_mvp:.2f}%) an toàn hơn việc nắm giữ 100% của từng cổ phiếu riêng lẻ.
             </div>
         </div>
     </div>
@@ -505,7 +562,7 @@ def build_html_dashboard(data):
     </div>
 
     <div class="footer">
-        Portfolio Quantitative Analysis Dashboard | FPT & VNM | Hỗ trợ tương tác toàn diện trên trình duyệt
+        Portfolio Quantitative Analysis Dashboard | FPT & VNM | Tích hợp Scipy, Statsmodels & Matplotlib
     </div>
 
     <script>
@@ -558,10 +615,11 @@ def start_web_server(port=8501):
     """Khởi động Web Server cục bộ và tự động mở trình duyệt"""
     print("\n" + "="*70)
     print("      KHỞI CHẠY WEB DASHBOARD QUẢN TRỊ DANH MỤC (FPT & VNM)")
+    print("       Động cơ định lượng: Scipy, Statsmodels, Matplotlib")
     print("="*70)
     
     # 1. Tính toán dữ liệu định lượng
-    print("[-] Đang tính toán dữ liệu tài chính (Markowitz, CAPM, SML, VaR)...")
+    print("[-] Đang tính toán dữ liệu tài chính (Markowitz SLSQP, OLS CAPM, Jarque-Bera)...")
     data = load_and_calculate_portfolio()
     
     # 2. Tạo file Excel và CSV dự phòng
@@ -583,14 +641,13 @@ def start_web_server(port=8501):
     html_file_path = os.path.join(os.path.dirname(__file__), 'dashboard.html')
     with open(html_file_path, 'w', encoding='utf-8') as f:
         f.write(html_dashboard)
-    print(f"[+] Đã lưu bản sao Web tĩnh tại: {html_file_path}")
+    print(f"[+] Đã cập nhật file Web tĩnh tại: {html_file_path}")
 
     # 5. Khởi động Web Server
     server_address = ('127.0.0.1', port)
     try:
         httpd = HTTPServer(server_address, DashboardHTTPHandler)
     except OSError:
-        # Nếu cổng 8501 đang bận, đổi sang cổng 8080
         server_address = ('127.0.0.1', 8080)
         httpd = HTTPServer(server_address, DashboardHTTPHandler)
 
