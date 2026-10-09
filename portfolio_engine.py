@@ -80,7 +80,15 @@ def load_and_calculate_portfolio(start_date='2023-09-27', end_date='2026-09-28',
     vol_tan = get_port_vol(w_tan_exact)
     sharpe_tan = (ret_tan - rf_annual) / vol_tan
 
-    # C. Mô phỏng dải đường cong Efficient Frontier (201 kịch bản trọng số)
+    # C. Danh mục Equal-Weighted (50% FPT - 50% VNM)
+    w_ew_exact = np.array([0.5, 0.5])
+    w_fpt_ew = 0.5
+    w_vnm_ew = 0.5
+    ret_ew = np.dot(w_ew_exact, annual_returns.values)
+    vol_ew = get_port_vol(w_ew_exact)
+    sharpe_ew = (ret_ew - rf_annual) / vol_ew
+
+    # D. Mô phỏng dải đường cong Efficient Frontier (201 kịch bản trọng số)
     weights_fpt = np.linspace(0.0, 1.0, 201)
     port_returns = []
     port_volatilities = []
@@ -189,6 +197,10 @@ def load_and_calculate_portfolio(start_date='2023-09-27', end_date='2026-09-28',
     alpha_tan = w_fpt_tan * alpha_fpt + w_vnm_tan * alpha_vnm
     capm_ret_tan = rf_annual + beta_tan * (market_annual_return - rf_annual)
 
+    beta_ew = 0.5 * beta_fpt + 0.5 * beta_vnm
+    alpha_ew = 0.5 * alpha_fpt + 0.5 * alpha_vnm
+    capm_ret_ew = rf_annual + beta_ew * (market_annual_return - rf_annual)
+
     # ==========================================================================
     # 6. PHÂN TÍCH PHÂN PHỐI & RỦI RO CHUYÊN SÂU BẰNG SCIPY (scipy.stats)
     # ==========================================================================
@@ -270,6 +282,64 @@ def load_and_calculate_portfolio(start_date='2023-09-27', end_date='2026-09-28',
         'Downside Vol (%)': downside_std_annual * 100
     })
 
+    portfolio_strategies = [
+        {
+            'key': 'vnm_100',
+            'name': '100% VNM (Defensive)',
+            'w_fpt': 0.0,
+            'w_vnm': 1.0,
+            'ret': float(annual_returns['VNM.VN']),
+            'vol': float(stock_vols['VNM.VN']),
+            'sharpe': float((annual_returns['VNM.VN'] - rf_annual) / stock_vols['VNM.VN']),
+            'beta': float(beta_vnm),
+            'alpha': float(alpha_vnm)
+        },
+        {
+            'key': 'mvp',
+            'name': 'Min Variance MVP (SLSQP)',
+            'w_fpt': float(w_fpt_mvp),
+            'w_vnm': float(w_vnm_mvp),
+            'ret': float(ret_mvp),
+            'vol': float(vol_mvp),
+            'sharpe': float(sharpe_mvp),
+            'beta': float(beta_mvp),
+            'alpha': float(alpha_mvp)
+        },
+        {
+            'key': 'equal_weight',
+            'name': 'Equal-Weight (50/50)',
+            'w_fpt': float(w_fpt_ew),
+            'w_vnm': float(w_vnm_ew),
+            'ret': float(ret_ew),
+            'vol': float(vol_ew),
+            'sharpe': float(sharpe_ew),
+            'beta': float(beta_ew),
+            'alpha': float(alpha_ew)
+        },
+        {
+            'key': 'tangency',
+            'name': 'Max Sharpe Tangency (SLSQP)',
+            'w_fpt': float(w_fpt_tan),
+            'w_vnm': float(w_vnm_tan),
+            'ret': float(ret_tan),
+            'vol': float(vol_tan),
+            'sharpe': float(sharpe_tan),
+            'beta': float(beta_tan),
+            'alpha': float(alpha_tan)
+        },
+        {
+            'key': 'fpt_100',
+            'name': '100% FPT (Growth)',
+            'w_fpt': 1.0,
+            'w_vnm': 0.0,
+            'ret': float(annual_returns['FPT.VN']),
+            'vol': float(stock_vols['FPT.VN']),
+            'sharpe': float((annual_returns['FPT.VN'] - rf_annual) / stock_vols['FPT.VN']),
+            'beta': float(beta_fpt),
+            'alpha': float(alpha_fpt)
+        }
+    ]
+
     return {
         'raw_data': raw_data,
         'daily_returns': daily_returns,
@@ -306,6 +376,15 @@ def load_and_calculate_portfolio(start_date='2023-09-27', end_date='2026-09-28',
         'ret_tan': ret_tan,
         'vol_tan': vol_tan,
         'sharpe_tan': sharpe_tan,
+        'w_fpt_ew': w_fpt_ew,
+        'w_vnm_ew': w_vnm_ew,
+        'ret_ew': ret_ew,
+        'vol_ew': vol_ew,
+        'sharpe_ew': sharpe_ew,
+        'beta_ew': beta_ew,
+        'alpha_ew': alpha_ew,
+        'capm_ret_ew': capm_ret_ew,
+        'portfolio_strategies': portfolio_strategies,
         'capm_stats': capm_stats,
         'beta_fpt': beta_fpt,
         'beta_vnm': beta_vnm,

@@ -29,6 +29,7 @@ if sys.platform.startswith('win'):
 from portfolio_engine import load_and_calculate_portfolio
 from charts import (
     create_fig_efficient_frontier,
+    create_fig_asset_weights,
     create_fig_return_distribution,
     create_fig_capm_regression,
     create_fig_sml,
@@ -48,11 +49,12 @@ def build_html_dashboard(data):
     """Tạo trang web HTML hoàn chỉnh chứa đầy đủ đồ thị, bảng biểu và báo cáo phân tích"""
     print("[-] Đang kết xuất các biểu đồ sang định dạng vector SVG...")
     svg_frontier = fig_to_svg_string(create_fig_efficient_frontier(data))
+    svg_weights = fig_to_svg_string(create_fig_asset_weights(data))
     svg_dist = fig_to_svg_string(create_fig_return_distribution(data))
     svg_capm = fig_to_svg_string(create_fig_capm_regression(data))
     svg_sml = fig_to_svg_string(create_fig_sml(data))
     svg_cov = fig_to_svg_string(create_fig_covariance_correlation(data))
-    print("[+] Đã kết xuất 5 đồ thị thành công!")
+    print("[+] Đã kết xuất 6 đồ thị thành công!")
 
     # 1. Bảng số liệu thống kê Expected Return & Variance
     metrics_df = data['metrics_df']
@@ -102,7 +104,24 @@ def build_html_dashboard(data):
     df_risk_table = pd.DataFrame(rows_risk).set_index('Ticker')
     risk_table_html = df_risk_table.to_html(classes='custom-table', border=0)
 
-    # 4. Bảng 12 phiên giá gần nhất
+    # 4. Bảng so sánh 5 chiến lược phân bổ tỷ trọng
+    strategies = data.get('portfolio_strategies', [])
+    rows_strat = []
+    for s in strategies:
+        rows_strat.append({
+            'Chiến lược': s['name'],
+            'Tỷ trọng FPT': f"{s['w_fpt']*100:.1f}%",
+            'Tỷ trọng VNM': f"{s['w_vnm']*100:.1f}%",
+            'Lợi nhuận E(R)': f"{s['ret']*100:.2f}%/năm",
+            'Độ biến động (σ)': f"{s['vol']*100:.2f}%/năm",
+            'Sharpe Ratio': f"{s['sharpe']:.2f}",
+            'Hệ số Beta (β)': f"{s['beta']:.2f}",
+            'Jensen Alpha (α)': f"{s['alpha']*100:+.2f}%/năm"
+        })
+    df_strat_table = pd.DataFrame(rows_strat).set_index('Chiến lược')
+    strat_table_html = df_strat_table.to_html(classes='custom-table', border=0)
+
+    # 5. Bảng 12 phiên giá gần nhất
     raw_data = data['raw_data'][data['stock_tickers']]
     prices_table_html = raw_data.tail(12).apply(
         lambda col: col.map(lambda x: f"{x:,.2f} VND")
@@ -424,11 +443,12 @@ def build_html_dashboard(data):
     <!-- Navigation Tabs -->
     <div class="tabs-nav">
         <button class="tab-btn active" onclick="openTab('tab1', this)">1. Biên hiệu quả Markowitz (CAL)</button>
-        <button class="tab-btn" onclick="openTab('tab2', this)">2. Phân phối lợi nhuận, KDE & VaR</button>
-        <button class="tab-btn" onclick="openTab('tab3', this)">3. Mô hình CAPM & Hồi quy OLS</button>
-        <button class="tab-btn" onclick="openTab('tab4', this)">4. Mô hình SML & Định giá</button>
-        <button class="tab-btn" onclick="openTab('tab5', this)">5. Ma trận Hiệp phương sai & Tương quan</button>
-        <button class="tab-btn" onclick="openTab('tab6', this)">6. Dữ liệu Adjusted Close & Thống kê</button>
+        <button class="tab-btn" onclick="openTab('tab2', this)">2. Phân bổ tỷ trọng tài sản (Asset Weights)</button>
+        <button class="tab-btn" onclick="openTab('tab3', this)">3. Phân phối lợi nhuận, KDE & VaR</button>
+        <button class="tab-btn" onclick="openTab('tab4', this)">4. Mô hình CAPM & Hồi quy OLS</button>
+        <button class="tab-btn" onclick="openTab('tab5', this)">5. Mô hình SML & Định giá</button>
+        <button class="tab-btn" onclick="openTab('tab6', this)">6. Ma trận Hiệp phương sai & Tương quan</button>
+        <button class="tab-btn" onclick="openTab('tab7', this)">7. Dữ liệu Adjusted Close & Thống kê</button>
     </div>
 
     <!-- Tab 1: Markowitz Efficient Frontier & CAL -->
@@ -449,8 +469,33 @@ def build_html_dashboard(data):
         </div>
     </div>
 
-    <!-- Tab 2: Return Distribution & VaR/CVaR -->
+    <!-- Tab 2: Asset Weights Allocation -->
     <div id="tab2" class="tab-pane">
+        <div class="chart-card">
+            <div class="chart-header">
+                <div class="chart-title">Mô hình Phân bổ Tỷ trọng Tài sản (Asset Weights Allocation) - VNM vs FPT</div>
+            </div>
+            <div class="chart-container">
+                {svg_weights}
+            </div>
+
+            <h3 style="margin: 20px 0 8px 0; color: var(--accent-blue);">Bảng so sánh chi tiết 5 chiến lược phân bổ tỷ trọng then chốt</h3>
+            <div style="overflow-x: auto;">
+                {strat_table_html}
+            </div>
+
+            <div class="insight-box">
+                <h4>Phân tích chiến lược phân bổ tỷ trọng (Asset Allocation Insights):</h4>
+                • <strong>Động thái phân bổ diện tích (Stacked Area):</strong> Thể hiện sự chuyển dịch liên tục giữa VNM và FPT ($w \\in [0, 1]$). Khi tăng tỷ trọng FPT từ 0% lên 100%, lợi nhuận kỳ vọng tăng trưởng liên tục từ {data['annual_returns']['VNM.VN']*100:.1f}% lên {data['annual_returns']['FPT.VN']*100:.1f}%/năm.<br>
+                • <strong>Điểm trũng rủi ro (Minimum Variance):</strong> Tại tỷ trọng FPT = {w_fpt_mvp:.1f}% và VNM = {w_vnm_mvp:.1f}%, đường cong biến động rủi ro đạt mức thấp nhất ({vol_mvp:.2f}%), thấp hơn cả 2 cổ phiếu đơn lẻ.<br>
+                • <strong>Chiến lược Tangency (Sharpe tối ưu):</strong> Phân bổ FPT = {w_fpt_tan:.1f}% và VNM = {w_vnm_tan:.1f}% tối ưu hóa lợi nhuận thặng dư trên mỗi đơn vị rủi ro với Sharpe = {sharpe_tan:.2f}.<br>
+                • <strong>Chiến lược Equal-Weighted (50/50):</strong> Phân bổ đều giữa 2 cổ phiếu mang lại lợi nhuận kỳ vọng {data['ret_ew']*100:.2f}% với độ biến động {data['vol_ew']*100:.2f}%.
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 3: Return Distribution & VaR/CVaR -->
+    <div id="tab3" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
                 <div class="chart-title">Phân tích Phân phối lợi nhuận thực nghiệm (KDE), Phân phối chuẩn Gauss & VaR/CVaR</div>
@@ -473,8 +518,8 @@ def build_html_dashboard(data):
         </div>
     </div>
 
-    <!-- Tab 3: CAPM & Portfolio Beta Sensitivity -->
-    <div id="tab3" class="tab-pane">
+    <!-- Tab 4: CAPM & Portfolio Beta Sensitivity -->
+    <div id="tab4" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
                 <div class="chart-title">Mô hình CAPM: Hồi quy OLS Statsmodels với 95% Confidence Band & Độ nhạy Beta (0% -> 100%)</div>
@@ -497,8 +542,8 @@ def build_html_dashboard(data):
         </div>
     </div>
 
-    <!-- Tab 4: Security Market Line (SML) & Valuation -->
-    <div id="tab4" class="tab-pane">
+    <!-- Tab 5: Security Market Line (SML) & Valuation -->
+    <div id="tab5" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
                 <div class="chart-title">Mô hình Security Market Line (SML) & Định giá Danh mục theo Trọng số</div>
@@ -515,8 +560,8 @@ def build_html_dashboard(data):
         </div>
     </div>
 
-    <!-- Tab 5: Covariance & Correlation Matrix -->
-    <div id="tab5" class="tab-pane">
+    <!-- Tab 6: Covariance & Correlation Matrix -->
+    <div id="tab6" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
                 <div class="chart-title">Bảng nhiệt (Heatmap) Ma trận Hiệp phương sai & Ma trận Hệ số Tương quan</div>
@@ -532,8 +577,8 @@ def build_html_dashboard(data):
         </div>
     </div>
 
-    <!-- Tab 6: Adjusted Close & Data Export -->
-    <div id="tab6" class="tab-pane">
+    <!-- Tab 7: Adjusted Close & Data Export -->
+    <div id="tab7" class="tab-pane">
         <div class="chart-card">
             <div class="chart-header">
                 <div class="chart-title">Bảng thống kê Expected Return, Variance & Giá đóng cửa điều chỉnh (Adjusted Close)</div>

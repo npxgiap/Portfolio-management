@@ -4,10 +4,11 @@ PORTFOLIO MANAGEMENT & QUANTITATIVE ANALYSIS: FPT & VNM
 Author: Quantitative Portfolio Analyst
 Mô hình triển khai:
   1. Efficient Frontier & Capital Allocation Line (CAL) - Markowitz Portfolio Theory
-  2. Return Distribution Analysis & Risk Metrics (Histogram, Normal Fit, VaR, CVaR)
-  3. CAPM Model: Security Characteristic Line (SCL) & Portfolio Beta Sensitivity (w: 0 -> 1)
-  4. Security Market Line (SML) & Portfolio Valuation / Jensen's Alpha (w: 0 -> 1)
-  5. Covariance & Correlation Heatmap Analysis
+  2. Asset Weights Allocation & Portfolio Transition Dynamics (VNM & FPT)
+  3. Return Distribution Analysis & Risk Metrics (Histogram, Normal Fit, VaR, CVaR)
+  4. CAPM Model: Security Characteristic Line (SCL) & Portfolio Beta Sensitivity (w: 0 -> 1)
+  5. Security Market Line (SML) & Portfolio Valuation / Jensen's Alpha (w: 0 -> 1)
+  6. Covariance & Correlation Heatmap Analysis
 ========================================================================================
 """
 
@@ -29,6 +30,7 @@ if current_dir not in sys.path:
 from portfolio_engine import load_and_calculate_portfolio
 from charts import (
     create_fig_efficient_frontier,
+    create_fig_asset_weights,
     create_fig_return_distribution,
     create_fig_capm_regression,
     create_fig_sml,
@@ -88,6 +90,12 @@ def main():
         print(f"       + Jarque-Bera Test:   JB = {m['jb_stat']:.2f}, p-value = {m['jb_pvalue']:.2e} -> {jb_txt}")
         print(f"       + Historical VaR 95%: {m['var_95']:.2f}% | Cornish-Fisher VaR: {m['var_cf_95']:.2f}%")
         print(f"       + CVaR 95% (1-Day):   {m['cvar_95']:.2f}%")
+
+    print(f"\n6. ASSET ALLOCATION STRATEGIES & WEIGHTS BREAKDOWN (VNM vs FPT):")
+    print(f"   {'Chiến lược':<28} | {'FPT':>7} | {'VNM':>7} | {'E(R)':>8} | {'Vol':>8} | {'Sharpe':>7} | {'Beta':>6}")
+    print("   " + "-"*80)
+    for s in data.get('portfolio_strategies', []):
+        print(f"   {s['name']:<28} | {s['w_fpt']*100:>6.1f}% | {s['w_vnm']*100:>6.1f}% | {s['ret']*100:>7.2f}% | {s['vol']*100:>7.2f}% | {s['sharpe']:>7.2f} | {s['beta']:>6.2f}")
     print("="*70)
 
     # 3. Khởi động Web Dashboard (Nhúng trực tiếp vector SVG, không tách thành từng ảnh tĩnh)

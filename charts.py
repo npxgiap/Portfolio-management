@@ -364,3 +364,132 @@ def create_fig_covariance_correlation(data):
 
     fig.tight_layout()
     return fig
+
+def create_fig_asset_weights(data):
+    """6. Đồ thị Phân bổ Tỷ trọng Tài sản (Asset Weights Allocation) cho VNM và FPT"""
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 6.6), dpi=100)
+    
+    weights_fpt = data['weights_fpt'] * 100  # 0% -> 100%
+    weights_vnm = 100.0 - weights_fpt
+    port_returns = data['port_returns'] * 100
+    port_volatilities = data['port_volatilities'] * 100
+    port_sharpes = data['port_sharpes']
+    
+    w_fpt_mvp = data['w_fpt_mvp'] * 100
+    w_vnm_mvp = data['w_vnm_mvp'] * 100
+    vol_mvp = data['vol_mvp'] * 100
+    ret_mvp = data['ret_mvp'] * 100
+
+    w_fpt_tan = data['w_fpt_tan'] * 100
+    w_vnm_tan = data['w_vnm_tan'] * 100
+    vol_tan = data['vol_tan'] * 100
+    ret_tan = data['ret_tan'] * 100
+    sharpe_tan = data['sharpe_tan']
+
+    # -------------------------------------------------------------------------
+    # Panel 1: Động thái phân bổ tỷ trọng & Hồ sơ Lợi nhuận - Rủi ro (Area & Twin Axes)
+    # -------------------------------------------------------------------------
+    ax1 = axes[0]
+    # Vẽ vùng diện tích tỷ trọng (Stacked Area)
+    ax1.fill_between(weights_fpt, 0, weights_vnm, color='#0984e3', alpha=0.55, 
+                     label=r'Tỷ trọng VNM ($w_{VNM}$)')
+    ax1.fill_between(weights_fpt, weights_vnm, 100, color='#d63031', alpha=0.55, 
+                     label=r'Tỷ trọng FPT ($w_{FPT}$)')
+    
+    ax1.set_xlabel('Tỷ trọng cổ phiếu FPT trong danh mục ($w_{FPT}$ %)', fontsize=10.5, fontweight='bold')
+    ax1.set_ylabel('Phân bổ tỷ trọng danh mục (%)', fontsize=10.5, fontweight='bold', color='#2d3436')
+    ax1.set_xlim(0, 100)
+    ax1.set_ylim(0, 100)
+    ax1.set_yticks(np.arange(0, 101, 20))
+
+    # Trục Y thứ 2: Lợi nhuận kỳ vọng & Biến động rủi ro
+    ax1_twin = ax1.twinx()
+    line_ret = ax1_twin.plot(weights_fpt, port_returns, color='#e67e22', linewidth=2.4, 
+                             linestyle='-', label=r'Lợi nhuận kỳ vọng $E(R_p)$ (%)')
+    line_vol = ax1_twin.plot(weights_fpt, port_volatilities, color='#00b894', linewidth=2.4, 
+                             linestyle='--', label=r'Độ biến động rủi ro $\sigma_p$ (%)')
+    ax1_twin.set_ylabel(r'Lợi nhuận $E(R_p)$ & Rủi ro $\sigma_p$ (%/năm)', fontsize=10.5, fontweight='bold', color='#2d3436')
+    ax1_twin.grid(False)  # Tắt lưới trục 2 để tránh rối mắt
+
+    # Đánh dấu các mốc danh mục cốt lõi
+    # 1. MVP
+    ax1.axvline(w_fpt_mvp, color='#00b894', linestyle=':', linewidth=2.0)
+    ax1_twin.scatter(w_fpt_mvp, vol_mvp, color='#00b894', marker='^', s=140, edgecolor='black', zorder=5)
+    ax1.text(w_fpt_mvp, 50, f"MVP\nFPT={w_fpt_mvp:.1f}%\nVNM={w_vnm_mvp:.1f}%\nσ={vol_mvp:.1f}%", 
+             ha='center', va='center', bbox=dict(boxstyle='round,pad=0.3', facecolor='#e8f8f5', edgecolor='#00b894', alpha=0.9),
+             fontsize=8.5, fontweight='bold')
+
+    # 2. Tangency
+    ax1.axvline(w_fpt_tan, color='#e67e22', linestyle=':', linewidth=2.0)
+    ax1_twin.scatter(w_fpt_tan, ret_tan, color='#e67e22', marker='*', s=240, edgecolor='black', zorder=5)
+    ax1.text(w_fpt_tan, 82, f"Tangency\nFPT={w_fpt_tan:.1f}%\nSR={sharpe_tan:.2f}", 
+             ha='center', va='center', bbox=dict(boxstyle='round,pad=0.3', facecolor='#fef9e7', edgecolor='#e67e22', alpha=0.9),
+             fontsize=8.5, fontweight='bold')
+
+    # Gộp legend 2 trục
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax1_twin.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', frameon=True, 
+               facecolor='white', framealpha=0.92, fontsize=8.5)
+
+    ax1.set_title('ĐỘNG THÁI PHÂN BỔ TỶ TRỌNG & ĐƯỜNG CONG RỦI RO - LỢI NHUẬN', 
+                  fontsize=12, fontweight='bold', pad=12)
+
+    # -------------------------------------------------------------------------
+    # Panel 2: So sánh cơ cấu tỷ trọng của các chiến lược danh mục (Horizontal Stacked Bar)
+    # -------------------------------------------------------------------------
+    ax2 = axes[1]
+    strategies = data.get('portfolio_strategies', [])
+    if not strategies:
+        # Fallback nếu danh sách chưa có
+        strategies = [
+            {'name': '100% VNM (Defensive)', 'w_fpt': 0.0, 'w_vnm': 1.0, 'ret': data['annual_returns']['VNM.VN'], 'vol': data['stock_vols']['VNM.VN'], 'sharpe': 0, 'beta': data['beta_vnm']},
+            {'name': 'Min Variance MVP (SLSQP)', 'w_fpt': data['w_fpt_mvp'], 'w_vnm': data['w_vnm_mvp'], 'ret': data['ret_mvp'], 'vol': data['vol_mvp'], 'sharpe': data['sharpe_mvp'], 'beta': data['beta_mvp']},
+            {'name': 'Equal-Weight (50/50)', 'w_fpt': 0.5, 'w_vnm': 0.5, 'ret': data['ret_ew'], 'vol': data['vol_ew'], 'sharpe': data['sharpe_ew'], 'beta': data['beta_ew']},
+            {'name': 'Max Sharpe Tangency (SLSQP)', 'w_fpt': data['w_fpt_tan'], 'w_vnm': data['w_vnm_tan'], 'ret': data['ret_tan'], 'vol': data['vol_tan'], 'sharpe': data['sharpe_tan'], 'beta': data['beta_tan']},
+            {'name': '100% FPT (Growth)', 'w_fpt': 1.0, 'w_vnm': 0.0, 'ret': data['annual_returns']['FPT.VN'], 'vol': data['stock_vols']['FPT.VN'], 'sharpe': 0, 'beta': data['beta_fpt']},
+        ]
+
+    strat_names = [s['name'] for s in strategies]
+    y_pos = np.arange(len(strat_names))
+    vnm_pcts = [s['w_vnm'] * 100 for s in strategies]
+    fpt_pcts = [s['w_fpt'] * 100 for s in strategies]
+
+    bar_height = 0.52
+    rects_vnm = ax2.barh(y_pos, vnm_pcts, height=bar_height, color='#0984e3', alpha=0.88, 
+                         edgecolor='#2c3e50', linewidth=1.1, label='Tỷ trọng VNM.VN')
+    rects_fpt = ax2.barh(y_pos, fpt_pcts, left=vnm_pcts, height=bar_height, color='#d63031', alpha=0.88, 
+                         edgecolor='#2c3e50', linewidth=1.1, label='Tỷ trọng FPT.VN')
+
+    # Nhãn số liệu chi tiết trong từng thanh tỷ trọng
+    for i in range(len(strategies)):
+        w_v = vnm_pcts[i]
+        w_f = fpt_pcts[i]
+        s = strategies[i]
+
+        # Nhãn phần trăm VNM
+        if w_v >= 12:
+            ax2.text(w_v / 2, y_pos[i], f"VNM\n{w_v:.1f}%", ha='center', va='center', 
+                     color='white', fontweight='bold', fontsize=9.0)
+        # Nhãn phần trăm FPT
+        if w_f >= 12:
+            ax2.text(w_v + w_f / 2, y_pos[i], f"FPT\n{w_f:.1f}%", ha='center', va='center', 
+                     color='white', fontweight='bold', fontsize=9.0)
+
+        # Chú thích hiệu quả đầu tư ở lề bên phải
+        stat_text = f"E(R)={s['ret']*100:.1f}% | σ={s['vol']*100:.1f}% | SR={s['sharpe']:.2f} | β={s['beta']:.2f}"
+        ax2.text(102.5, y_pos[i], stat_text, ha='left', va='center', fontsize=8.8, 
+                 fontweight='bold', color='#2d3436')
+
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels(strat_names, fontsize=9.5, fontweight='bold')
+    ax2.set_xlabel('Tỷ trọng phân bổ tài sản (%)', fontsize=10.5, fontweight='bold')
+    ax2.set_xlim(0, 165)  # Dành khoảng trống bên phải cho nhãn thống kê
+    ax2.set_xticks(np.arange(0, 101, 20))
+    ax2.legend(loc='lower left', frameon=True, facecolor='white', framealpha=0.92, fontsize=9.0)
+    ax2.set_title('SO SÁNH CƠ CẤU TỶ TRỌNG CÁC CHIẾN LƯỢC DANH MỤC', 
+                  fontsize=12, fontweight='bold', pad=12)
+
+    fig.tight_layout()
+    return fig
+

@@ -4,7 +4,13 @@ PORTFOLIO MANAGEMENT & QUANTITATIVE ANALYTICS: MASTER WEB DASHBOARD
 ========================================================================================
 File tổng hợp thiết kế dưới dạng Web Dashboard hoàn chỉnh.
 - Tự động nạp dữ liệu định lượng từ portfolio_engine.py
-- Nhúng toàn bộ 5 mô hình đồ thị từ charts.py dưới dạng vector SVG sắc nét
+- Nhúng toàn bộ 6 mô hình đồ thị từ charts.py dưới dạng vector SVG sắc nét:
+    1. Efficient Frontier & Capital Allocation Line (CAL) - Markowitz SLSQP
+    2. Asset Weights Allocation & Portfolio Transition Dynamics (VNM & FPT)
+    3. Return Distribution, Gaussian Normal Fit, KDE & VaR/CVaR (Scipy Stats)
+    4. CAPM Security Characteristic Line (SCL) & 95% Confidence Band (Statsmodels OLS)
+    5. Security Market Line (SML) & Asset Pricing Valuation
+    6. Covariance & Correlation Matrix Heatmaps
 - Không tách thành từng file ảnh tĩnh (.png)
 - Tích hợp bảng giá Adjusted Close, bảng Variance/Expected Return, và nút tải Excel/CSV
 - Tự động mở trình duyệt web khi chạy: python dashboard.py
